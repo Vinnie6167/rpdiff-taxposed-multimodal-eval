@@ -63,27 +63,27 @@ class LocalAbstractPolicy(nn.Module):
     def _build_output_heads(self, pooled_dim: int, hidden_dim: int):
         """
         Creates the output 2-layer MLPs used for predicting translation and rotation
-        
+
         Args:
             pooled_dim (int): Input dimensionality to these output heads (same as dimensionality
                 of the pooled feature after processing the point features)
             hidden_dim (int): Hidden dim for these output heads
         """
         self.out_trans = nn.Sequential(nn.Linear(pooled_dim, hidden_dim), nn.ReLU(), nn.Linear(hidden_dim, 3))
-        self.out_vec1 = nn.Sequential(nn.Linear(pooled_dim, hidden_dim), nn.ReLU(), nn.Linear(hidden_dim, 3)) 
+        self.out_vec1 = nn.Sequential(nn.Linear(pooled_dim, hidden_dim), nn.ReLU(), nn.Linear(hidden_dim, 3))
         self.out_vec2 = nn.Sequential(nn.Linear(pooled_dim, hidden_dim), nn.ReLU(), nn.Linear(hidden_dim, 3))
 
         if self.predict_offset:
             self.out_trans_offset = nn.Sequential(nn.Linear(pooled_dim, hidden_dim), nn.ReLU(), nn.Linear(hidden_dim, 3))
-        
+
     def process_model_input(self, model_input: dict) -> Tuple[dict]:
         """
         Pre-processes the input point cloud and per-point features. Consists of scaling the 3D point
-        clouds to be roughly ~unit bounding box scale each, adding the mean offsets to make them 
+        clouds to be roughly ~unit bounding box scale each, adding the mean offsets to make them
         in the correct position relative to each other (with a convention for centering the pair by
-        the mean of the parent point cloud), and then combining all of these features first in the 
+        the mean of the parent point cloud), and then combining all of these features first in the
         feature dimension, and then in the point dimension
-        
+
         Args:
             model_input (dict): Keys (Values):
                 "parent/child_start_pcd" B x N x 3 (centered point clouds),
@@ -93,7 +93,7 @@ class LocalAbstractPolicy(nn.Module):
 
         Output:
             dict: Keys (Values): "parent/child" B x N x 3 (scaled and shifted point clouds)
-            dict: Keys (Values): "parent/child" B x N x h_dim (projected feats and point clouds, concated into 
+            dict: Keys (Values): "parent/child" B x N x h_dim (projected feats and point clouds, concated into
                 new per-point features)
         """
 
@@ -115,7 +115,7 @@ class LocalAbstractPolicy(nn.Module):
             vn_parent_scaling = torch.Tensor([self.fixed_scaling]).repeat(B).float().cuda()
         ppcd_cent = ppcd_cent * vn_parent_scaling[:, None, None].repeat(1, Np, 1)
         cpcd_cent = cpcd_cent * vn_parent_scaling[:, None, None].repeat(1, Nc, 1)
-        
+
         # add offset to the respective point clouds for relative positions between objects to show up, scaling the offset appropriately too
         cpcd = cpcd_cent - (p2c_offset[:, None, :].repeat(1, cpcd_cent.shape[1], 1) * vn_parent_scaling[:, None, None].repeat(1, Nc, 1))
         ppcd = ppcd_cent
@@ -132,7 +132,7 @@ class LocalAbstractPolicy(nn.Module):
         # append one-hot for object A/B identity
         des_full_parent_coords = torch.cat([parent_pcd_emb, parent_latent_emb, self.onehot_a.repeat((B, Np, 1))], dim=-1)
         des_full_child_coords = torch.cat([child_pcd_emb, child_latent_emb, self.onehot_b.repeat((B, Nc, 1))], dim=-1)
-        
+
         # downsample with random permutation (voxel or fps downsampling would be better...)
         des = dict(parent=des_full_parent_coords, child=des_full_child_coords)
         pcd = dict(parent=ppcd, child=cpcd)
@@ -171,9 +171,9 @@ class LocalAbstractPolicy(nn.Module):
             out_quat_unnorm = out_quat
 
         model_output = dict(
-            trans=out_trans, 
-            unnorm_quat=out_quat_unnorm, 
-            quat=out_quat, 
+            trans=out_trans,
+            unnorm_quat=out_quat_unnorm,
+            quat=out_quat,
             rot_mat=out_rot_mat)
 
         if self.predict_offset:
@@ -185,7 +185,7 @@ class LocalAbstractPolicy(nn.Module):
 
 
 class LocalAbstractSuccessClassifier(LocalAbstractPolicy):
-    def __init__(self, n_pts: int, pn_pts: int=None, cn_pts: int=None, 
+    def __init__(self, n_pts: int, pn_pts: int=None, cn_pts: int=None,
                  sigmoid: bool=True, fixed_scaling: float=None):
         super().__init__(n_pts=n_pts, pn_pts=pn_pts, cn_pts=cn_pts, fixed_scaling=fixed_scaling)
         self.sigmoid = sigmoid
@@ -193,7 +193,7 @@ class LocalAbstractSuccessClassifier(LocalAbstractPolicy):
     def _build_output_heads(self, pooled_dim: int, hidden_dim: int):
         """
         Creates the output 2-layer MLPs used for predicting translation and rotation
-        
+
         Args:
             pooled_dim (int): Input dimensionality to these output heads (same as dimensionality
                 of the pooled feature after processing the point features)

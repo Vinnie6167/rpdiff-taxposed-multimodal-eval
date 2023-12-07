@@ -543,7 +543,7 @@ def multistep_regression_scene_combine_sc(
     # child_mean_batch = child_pcd_t.mean(0).reshape(1, 1, 3).repeat((1, child_pcd_ds.shape[0], 1))  # 1 x N_child x 3
     child_mean_batch = child_pcd_t.mean(0).reshape(1, 1, 3).repeat((M, child_pcd_ds.shape[0], 1))  # M x N_child x 3
     world_trans_batch = world_pts_t.reshape(-1, 1, 3).repeat((1, child_pcd_ds.shape[0], 1))[:M]  # M x N_child x 3
-
+    
     # prepare centered point clouds and relative translation to apply for initial translation from voxel positions
     # move to the location of parent crops (voxel positions)
     delta_trans_batch = world_trans_batch - child_mean_batch  # M x N_child x 3
@@ -1288,6 +1288,7 @@ def multistep_regression_scene_combine_sc(
 
                 # make success prediction and save success probability in list
                 small_success_out = success_model(small_policy_mi)
+                
                 success_out_list.extend(small_success_out['success'].detach().cpu().numpy().reshape(-1).tolist())
 
                 idx += sm_bs 

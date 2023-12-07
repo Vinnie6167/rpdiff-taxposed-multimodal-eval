@@ -12,8 +12,13 @@ import json
 import trimesh
 from scipy.spatial.transform import Rotation as R
 
+from hydra import compose, initialize
+from omegaconf import DictConfig, OmegaConf
+
 import pybullet as p
 import meshcat
+
+from pytorch3d.ops import sample_farthest_points
 
 from airobot import log_info, log_warn, log_debug, log_critical, set_log_level
 from airobot.utils.pb_util import create_pybullet_client
@@ -32,7 +37,7 @@ from rpdiff.utils.eval_gen_utils import constraint_obj_world, safeCollisionFilte
 from rpdiff.utils.relational_policy.multistep_pose_regression import policy_inference_methods_dict
 from rpdiff.model.coarse_affordance import CoarseAffordanceVoxelRot
 from rpdiff.model.transformer.policy import (
-    NSMTransformerSingleTransformationRegression, 
+    NSMTransformerSingleTransformationRegression,
     NSMTransformerSingleTransformationRegressionCVAE,
     NSMTransformerSingleSuccessClassifier)
 
@@ -52,9 +57,9 @@ def check_ckpt_load_latest(ckpt_path: str) -> str:
 
 
 def pb2mc_update(
-        recorder: PyBulletMeshcat, 
-        mc_vis: meshcat.Visualizer, 
-        stop_event: threading.Event, 
+        recorder: PyBulletMeshcat,
+        mc_vis: meshcat.Visualizer,
+        stop_event: threading.Event,
         run_event: threading.Event) -> None:
     iters = 0
     # while True:
@@ -71,6 +76,10 @@ def pb2mc_update(
 
 
 def main(args: config_util.AttrDict) -> None:
+
+    initialize(version_base=None, config_path="../config")
+    cfg = compose(config_name="can_on_cabinet_residual_vinnie")
+    print(OmegaConf.to_yaml(cfg))
 
     #####################################################################################
     # set up all generic experiment info
@@ -92,7 +101,7 @@ def main(args: config_util.AttrDict) -> None:
     eval_save_dir = osp.join(eval_save_dir_root, experiment_name_spec)
     util.safe_makedirs(eval_save_dir_root)
     util.safe_makedirs(eval_save_dir)
-    
+
     if args.new_meshcat:
         mc_vis = meshcat.Visualizer()
     else:
@@ -101,9 +110,9 @@ def main(args: config_util.AttrDict) -> None:
     mc_vis['scene'].delete()
 
     pb_client = create_pybullet_client(
-        gui=args.experiment.pybullet_viz, 
-        opengl_render=True, 
-        realtime=True, 
+        gui=args.experiment.pybullet_viz,
+        opengl_render=True,
+        realtime=True,
         server=args.experiment.pybullet_server)
     recorder = PyBulletMeshcat(pb_client=pb_client)
     recorder.clear()
@@ -130,7 +139,7 @@ def main(args: config_util.AttrDict) -> None:
             upright_euler_dict[obj_cat] = args.objects.default_upright_euler
         else:
             upright_euler_dict[obj_cat] = obj_cat_info.upright_euler
-        
+
         if obj_cat == 'mug':
             bad_ids[obj_cat] = bad_shapenet_mug_ids_list
         elif obj_cat == 'bowl':
@@ -163,7 +172,7 @@ def main(args: config_util.AttrDict) -> None:
         mesh_names[k] = objects_filtered
 
     obj_classes = list(mesh_names.keys())
-    
+
     env_args = args.environment
     scale_high, scale_low = env_args.mesh_scale_high, env_args.mesh_scale_low
     scale_default = env_args.mesh_scale_default
@@ -184,7 +193,7 @@ def main(args: config_util.AttrDict) -> None:
     pc_master_dict = dict(parent={}, child={})
     pc_master_dict['parent']['class'] = parent_class
     pc_master_dict['child']['class'] = child_class
-    
+
     valid_load_pose_types = ['any_pose', 'demo_pose', 'random_upright']
     assert args.experiment.eval.parent_load_pose_type in valid_load_pose_types, f'Invalid string value for args.experiment.eval.parent_load_pose_type! Must be in {", ".join(valid_load_pose_types)}'
     assert args.experiment.eval.child_load_pose_type in valid_load_pose_types, f'Invalid string value for args.experiment.eval.child_load_pose_type! Must be in {", ".join(valid_load_pose_types)}'
@@ -218,16 +227,16 @@ def main(args: config_util.AttrDict) -> None:
     pc_master_dict['parent']['yhl'] = [0.6, -0.6]
     pc_master_dict['child']['xhl'] = [0.65, 0.2]
     pc_master_dict['child']['yhl'] = [0.6, -0.6]
-    
+
     pc_object_class = dict(parent=pc_master_dict['parent']['class'], child=pc_master_dict['child']['class'])
     for pc in pcl:
-        pc_master_dict[pc]['scale_hl'] = args.objects.categories[pc_object_class[pc]].scale_hl 
-        pc_master_dict[pc]['scale_default'] = args.objects.categories[pc_object_class[pc]].scale_default 
+        pc_master_dict[pc]['scale_hl'] = args.objects.categories[pc_object_class[pc]].scale_hl
+        pc_master_dict[pc]['scale_default'] = args.objects.categories[pc_object_class[pc]].scale_default
 
     #########################################################################
     # Set up the models (feat encoder, voxel affordance, pose refinement, success)
 
-    model_ckpt_logdir = osp.join(path_util.get_rpdiff_model_weights(), args.experiment.logdir) 
+    model_ckpt_logdir = osp.join(path_util.get_rpdiff_model_weights(), args.experiment.logdir)
 
     reso_grid = args.data.voxel_grid.reso_grid  # args.reso_grid
     padding_grid = args.data.voxel_grid.padding
@@ -238,7 +247,7 @@ def main(args: config_util.AttrDict) -> None:
     raster_pts = raster_pts.reshape(-1, 3)
 
     rot_grid_samples = args.data.rot_grid_samples
-    rot_grid = util.generate_healpix_grid(size=rot_grid_samples) 
+    rot_grid = util.generate_healpix_grid(size=rot_grid_samples)
     args.data.rot_grid_bins = rot_grid.shape[0]
 
     exp_args = args.experiment
@@ -253,7 +262,7 @@ def main(args: config_util.AttrDict) -> None:
     pose_refine_model_path = None
     pr_model = None
     if exp_args.load_pose_regression:
-        
+
         # assumes model path exists
         pose_refine_model_path = osp.join(model_ckpt_logdir, args.experiment.eval.pose_refine_model_name)
         pose_refine_model_path = check_ckpt_load_latest(pose_refine_model_path)
@@ -268,7 +277,7 @@ def main(args: config_util.AttrDict) -> None:
         if args.model.refine_pose.get('model_kwargs') is not None:
             custom_pr_args = args.model.refine_pose.model_kwargs[pr_type]
             config_util.update_recursive(pr_args, custom_pr_args)
-        
+
         if pr_type == 'nsm_transformer':
             pr_model_cls = NSMTransformerSingleTransformationRegression
         elif pr_type == 'nsm_transformer_cvae':
@@ -277,8 +286,8 @@ def main(args: config_util.AttrDict) -> None:
             raise ValueError(f'Unrecognized: {pr_type}')
 
         pr_model = pr_model_cls(
-            mc_vis=mc_vis, 
-            feat_dim=args.model.refine_pose.feat_dim, 
+            mc_vis=mc_vis,
+            feat_dim=args.model.refine_pose.feat_dim,
             **pr_args).cuda()
 
         pr_model.load_state_dict(pose_refine_ckpt['refine_pose_model_state_dict'])
@@ -312,7 +321,7 @@ def main(args: config_util.AttrDict) -> None:
             raise ValueError(f'Unrecognized success model type: {sc_type}')
 
         sc_args.sigmoid = True
-        
+
         success_model = success_model_cls(
             mc_vis=mc_vis,
             feat_dim=args.model.success.feat_dim,
@@ -344,7 +353,7 @@ def main(args: config_util.AttrDict) -> None:
             config_util.update_recursive(coarse_aff_args, custom_coarse_aff_args)
 
         coarse_aff_model = CoarseAffordanceVoxelRot(
-            mc_vis=mc_vis, 
+            mc_vis=mc_vis,
             feat_dim=args.model.coarse_aff.feat_dim,
             rot_grid_dim=args.data.rot_grid_bins,
             padding=args.data.voxel_grid.padding,
@@ -352,7 +361,7 @@ def main(args: config_util.AttrDict) -> None:
             scene_encoder_kwargs=coarse_aff_args).cuda()
 
         coarse_aff_model.load_state_dict(voxel_aff_ckpt['coarse_aff_model_state_dict'])
-        
+
         if args.model.coarse_aff.get('multi_model') is not None:
             if args.model.coarse_aff.multi_model:
 
@@ -360,7 +369,7 @@ def main(args: config_util.AttrDict) -> None:
                 if args.model.coarse_aff.get('model_kwargs2') is not None:
                     custom_coarse_aff_args2 = args.model.coarse_aff.model_kwargs2[coarse_aff_type]
                     config_util.update_recursive(coarse_aff_args2, custom_coarse_aff_args2)
-                
+
                 # hacky thing we shouldn't need?
                 args.model.coarse_aff = config_util.recursive_attr_dict(args.model.coarse_aff)
                 voxel_reso_grid2 = args.data.voxel_grid.reso_grid
@@ -370,7 +379,7 @@ def main(args: config_util.AttrDict) -> None:
                 padding2 = util.set_if_not_none(padding2, args.data.voxel_grid.padding)
 
                 coarse_aff_model2 = CoarseAffordanceVoxelRot(
-                    mc_vis=mc_vis, 
+                    mc_vis=mc_vis,
                     feat_dim=args.model.coarse_aff.feat_dim,
                     rot_grid_dim=args.data.rot_grid_bins,
                     padding=padding2,
@@ -383,6 +392,79 @@ def main(args: config_util.AttrDict) -> None:
                 infer_kwargs['coarse_aff_model2']['padding'] = padding2
 
                 coarse_aff_model2.load_state_dict(voxel_aff_ckpt['coarse_aff_model_state_dict2'])
+
+    ## load taxposed model
+    if exp_args.eval.taxposed_input:
+        import pytorch_lightning as pl
+        pl.seed_everything(cfg.seed)
+
+        # from equivariant_pose_graph.dataset.rpdiff_data_module import RpDiffDataModule
+        from equivariant_pose_graph.training.flow_equivariance_training_module_nocentering_multimodal import EquivarianceTrainingModule, EquivarianceTrainingModule_WithPZCondX
+        from equivariant_pose_graph.models.transformer_flow import ResidualFlow_DiffEmbTransformer
+        from equivariant_pose_graph.models.multimodal_transformer_flow import Multimodal_ResidualFlow_DiffEmbTransformer, Multimodal_ResidualFlow_DiffEmbTransformer_WithPZCondX
+
+        TP_input_dims = Multimodal_ResidualFlow_DiffEmbTransformer.TP_INPUT_DIMS[cfg.conditioning]
+
+        inner_network = ResidualFlow_DiffEmbTransformer(
+            emb_dims=cfg.emb_dims,
+            input_dims=TP_input_dims,
+            emb_nn=cfg.emb_nn,
+            return_flow_component=cfg.return_flow_component,
+            center_feature=cfg.center_feature,
+            inital_sampling_ratio=cfg.inital_sampling_ratio,
+            pred_weight=cfg.pred_weight,
+            freeze_embnn=cfg.freeze_embnn,
+            conditioning_size=cfg.latent_z_linear_size if cfg.conditioning in ["latent_z_linear_internalcond"] else 0,
+            )
+
+        network = Multimodal_ResidualFlow_DiffEmbTransformer(
+            residualflow_diffembtransformer=inner_network,
+            gumbel_temp=cfg.gumbel_temp,
+            freeze_residual_flow=cfg.freeze_residual_flow,
+            center_feature=cfg.center_feature,
+            freeze_z_embnn=cfg.freeze_z_embnn,
+            division_smooth_factor=cfg.division_smooth_factor,
+            add_smooth_factor=cfg.add_smooth_factor,
+            conditioning=cfg.conditioning,
+            latent_z_linear_size=cfg.latent_z_linear_size,
+            taxpose_centering=cfg.taxpose_centering
+        )
+
+        model = EquivarianceTrainingModule(
+            network,
+            lr=cfg.lr,
+            image_log_period=cfg.image_logging_period,
+            point_loss_type=cfg.point_loss_type,
+            rotation_weight=cfg.rotation_weight,
+            weight_normalize=cfg.weight_normalize,
+            consistency_weight=cfg.consistency_weight,
+            smoothness_weight=cfg.smoothness_weight,
+            action_weight=cfg.action_weight,
+            #latent_weight=cfg.latent_weight,
+            vae_reg_loss_weight=cfg.vae_reg_loss_weight,
+            sigmoid_on=cfg.sigmoid_on,
+            softmax_temperature=cfg.softmax_temperature,
+            min_err_across_racks_debug=cfg.min_err_across_racks_debug,
+            error_mode_2rack=cfg.error_mode_2rack)
+
+        network_cond_x = Multimodal_ResidualFlow_DiffEmbTransformer_WithPZCondX(
+           residualflow_embnn=network,
+           encoder_type=cfg.pzcondx_encoder_type,
+           shuffle_for_pzX=cfg.shuffle_for_pzX,
+        )
+
+        place_model = EquivarianceTrainingModule_WithPZCondX(
+            network_cond_x,
+            model,
+            goal_emb_cond_x_loss_weight=cfg.goal_emb_cond_x_loss_weight)
+
+        place_model.cuda()
+
+        place_model.load_state_dict(
+            torch.load(cfg.checkpoint_file)["state_dict"]
+        )
+        log_info("Model Loaded from " + str(cfg.checkpoint_file))
+        print("Model Loaded from " + str(cfg.checkpoint_file))
 
     #####################################################################################
     # prepare function used for inference using set of trained models
@@ -424,7 +506,7 @@ def main(args: config_util.AttrDict) -> None:
     util.safe_makedirs(run_logs)
     run_log_folder = osp.join(run_logs, nowstr)
     util.safe_makedirs(run_log_folder)
-    
+
     # Save full name of model paths used
     if exp_args.load_pose_regression:
         args.experiment.eval.pose_refine_model_name_full = pose_refine_model_path
@@ -453,9 +535,9 @@ def main(args: config_util.AttrDict) -> None:
     eval_cabinet_task = 'syn_cabinet' in parent_class and 'syn_can' in child_class
     eval_mug_rack_multi_task = parent_class == 'syn_rack_med' and child_class == 'mug'
 
-    scene_extents = args.data.coarse_aff.scene_extents 
+    scene_extents = args.data.coarse_aff.scene_extents
     scene_scale = 1 / np.max(scene_extents)
-    args.data.coarse_aff.scene_scale = scene_scale 
+    args.data.coarse_aff.scene_scale = scene_scale
 
     if util.exists_and_true(exp_args.eval, 'multi_aff_rot'):
         infer_kwargs['multi_aff_rot'] = True
@@ -463,7 +545,7 @@ def main(args: config_util.AttrDict) -> None:
     for iteration in range(exp_args.start_iteration, exp_args.num_iterations):
         #####################################################################################
         # set up the trial
-        
+
         pause_mc_thread(True)
 
         parent_id_list = random.sample(pc_master_dict['parent']['test_ids'], np.random.randint(1, exp_args.n_parent_instances+1))
@@ -615,7 +697,7 @@ def main(args: config_util.AttrDict) -> None:
                         occ_values = inside_mesh.check_mesh_contains(current_scene_concat_mesh, sample_query_points)
                         occ_inds = np.where(occ_values)[0]
                         log_debug(f'Number of infeasible query points: {occ_inds.shape[0]}')
-                        
+
                         if args.debug:
                             pause_mc_thread(True)
                             time.sleep(0.3)
@@ -628,7 +710,7 @@ def main(args: config_util.AttrDict) -> None:
                             feasible_pose = True
                     else:
                         feasible_pose = True
-                    
+
                     try_feasible_pose += 1
                     if try_feasible_pose > 100:
                         log_warn('Attempted to find feasible pose 100 times, something is wrong')
@@ -668,12 +750,12 @@ def main(args: config_util.AttrDict) -> None:
                 color = (1.0, 1.0, 1.0, 1.0) if pc == 'parent' else (0.0, 0.0, 1.0, 1.0)
 
                 concave_urdf_classes = [
-                    # 'syn_rack_easy', 
-                    # 'syn_rack_med', 
-                    # 'syn_rack_hard', 
-                    'syn_bookshelf', 
-                    'syn_cabinet', 
-                    'syn_cabinet_packed_nonuniform', 
+                    # 'syn_rack_easy',
+                    # 'syn_rack_med',
+                    # 'syn_rack_hard',
+                    'syn_bookshelf',
+                    'syn_cabinet',
+                    'syn_cabinet_packed_nonuniform',
                     'syn_cabinet_packed_uniform'
                 ]
 
@@ -683,7 +765,7 @@ def main(args: config_util.AttrDict) -> None:
                     dir_to_load = '/'.join(obj_obj_file.split('/')[:-1])
                     fname_to_load = osp.join(dir_to_load, obj_obj_file.split('/')[-1] + '.urdf')
                     assert osp.exists(fname_to_load), f'URDF file: {fname_to_load} does not exist!'
-                    obj_id = pb_client.load_urdf(fname_to_load, base_pos=pos, base_ori=ori) 
+                    obj_id = pb_client.load_urdf(fname_to_load, base_pos=pos, base_ori=ori)
                     recorder.register_object(obj_id, fname_to_load)
                     log_debug(f'Loaded from URDF: {fname_to_load}')
                 else:
@@ -776,7 +858,7 @@ def main(args: config_util.AttrDict) -> None:
         pc_obs_info['pcd'] = {}
         pc_obs_info['pcd_pts'] = {}
         pc_obs_info['pcd_pts']['parent'] = []
-        pc_obs_info['pcd_pts']['child'] = [] 
+        pc_obs_info['pcd_pts']['child'] = []
 
         obj_pose_world = p.getBasePositionAndOrientation(obj_id)
         obj_pose_world = util.list2pose_stamped(list(obj_pose_world[0]) + list(obj_pose_world[1]))
@@ -784,9 +866,9 @@ def main(args: config_util.AttrDict) -> None:
         cam_cfg = config_util.copy_attr_dict(env_args.cameras)
         if (eval_bookshelf_task or eval_cabinet_task):
             # modify the focus point and yaw angle for the first two cameras
-            bookshelf_focus_pt = parent_pose_mat[:-1, -1].tolist(); bookshelf_focus_pt[2] += 0.275 
-            cam_cfg.focus_pt_set[0] = bookshelf_focus_pt 
-            cam_cfg.focus_pt_set[1] = bookshelf_focus_pt 
+            bookshelf_focus_pt = parent_pose_mat[:-1, -1].tolist(); bookshelf_focus_pt[2] += 0.275
+            cam_cfg.focus_pt_set[0] = bookshelf_focus_pt
+            cam_cfg.focus_pt_set[1] = bookshelf_focus_pt
 
             cam_cfg.yaw_angles[0] = np.rad2deg(bookshelf_yaw) + 90 - 25
             cam_cfg.yaw_angles[1] = np.rad2deg(bookshelf_yaw) + 90 + 25
@@ -797,8 +879,8 @@ def main(args: config_util.AttrDict) -> None:
         cam_info['pose_world'] = []
         for i, cam in enumerate(cams.cams):
             cam_info['pose_world'].append(util.pose_from_matrix(cam.cam_ext_mat))
-            util.meshcat_frame_show(mc_vis, f'scene/cam_pose_{i}', cam.cam_ext_mat) 
-        
+            util.meshcat_frame_show(mc_vis, f'scene/cam_pose_{i}', cam.cam_ext_mat)
+
         if eval_cam is None:
             eval_cam = RGBDCameraPybullet(cams._camera_cfgs(), pb_client)
             eval_cam.setup_camera(
@@ -808,7 +890,7 @@ def main(args: config_util.AttrDict) -> None:
                 pitch=-25,
                 roll=0)
 
-        for i, cam in enumerate(cams.cams): 
+        for i, cam in enumerate(cams.cams):
             # get image and raw point cloud
             rgb, depth, seg = cam.get_images(get_rgb=True, get_depth=True, get_seg=True)
             pts_raw, _ = cam.get_pcd(in_world=True, rgb_image=rgb, depth_image=depth, depth_min=0.0, depth_max=np.inf)
@@ -820,14 +902,14 @@ def main(args: config_util.AttrDict) -> None:
             for pc in pcl:
                 for obj_id in pc_master_dict[pc]['pb_obj_id']:
                     obj_inds = np.where(flat_seg == obj_id)
-                    seg_depth = flat_depth[obj_inds[0]]  
-                    
+                    seg_depth = flat_depth[obj_inds[0]]
+
                     obj_pts = pts_raw[obj_inds[0], :]
                     pc_obs_info['pcd_pts'][pc].append(obj_pts)
 
             depth_imgs.append(seg_depth)
             seg_idxs.append(obj_inds)
-        
+
         for pc, obj_pcd_pts in pc_obs_info['pcd_pts'].items():
             target_obj_pcd_obs = np.concatenate(obj_pcd_pts, axis=0)  # object shape point cloud
             pc_obs_info['pcd'][pc] = target_obj_pcd_obs
@@ -875,24 +957,61 @@ def main(args: config_util.AttrDict) -> None:
         with recorder.meshcat_scene_lock:
             util.meshcat_pcd_show(mc_vis, parent_pcd, color=(255, 0, 0), name='scene/parent_pcd')
             util.meshcat_pcd_show(mc_vis, child_pcd, color=(0, 0, 255), name='scene/child_pcd')
-        
-        guess_rot = rot_grid[np.random.randint(rot_grid.shape[0])]
-        tf1 = np.eye(4); tf1[:-1, -1] = -1.0 * np.mean(child_pcd, axis=0)
-        tf2 = np.eye(4)
-        if exp_args.eval.init_orig_ori:
-            log_warn(f'!!! USING ORIGINAL ORIENTATION AS INITIAL GUESS ORIENTATION !!!')
-        else:
-            log_warn(f'!!! USING RANDOM SO(3) ROTATION AS INITIAL GUESS ORIENTATION !!!')
-            tf2[:-1, :-1] = guess_rot
-        
-        if exp_args.eval.init_parent_mean_pos:
-            log_warn(f'!!! USING PARENT MEAN AS INITIAL GUESS POSITION !!!')
-            tf3 = np.eye(4); tf3[:-1, -1] = np.mean(parent_pcd, axis=0) + ((np.random.random(3) - 0.5) * 0.005)
-        else:
-            log_warn(f'!!! USING RANDOM PARENT POINT AS INITIAL GUESS POSITION !!!')
-            tf3 = np.eye(4); tf3[:-1, -1] = parent_pcd[np.random.randint(parent_pcd.shape[0])] + (np.random.random(3) * 0.01)
 
-        relative_trans_guess = np.matmul(tf3, np.matmul(tf2, tf1))
+        if exp_args.eval.taxposed_input:
+            print(child_pcd.shape, parent_pcd.shape)
+
+            # np.random.shuffle(child_pcd)
+            # np.random.shuffle(parent_pcd)
+            # points_child = torch.from_numpy(child_pcd[:6000]).float().unsqueeze(0).cuda()
+            # points_parent = torch.from_numpy(parent_pcd[:6000]).float().unsqueeze(0).cuda()
+
+            points_child = torch.from_numpy(child_pcd).float().unsqueeze(0).cuda()
+            points_parent = torch.from_numpy(parent_pcd).float().unsqueeze(0).cuda()
+
+            repeat = 1 # k
+            points_child = points_child.repeat([repeat, 1, 1])
+            points_parent = points_parent.repeat([repeat, 1, 1])
+
+            # downsample points
+            points_child, _ = sample_farthest_points(
+                points_child, K=1024, random_start_point=True
+            )
+            points_parent, _ = sample_farthest_points(
+                points_parent, K=1024, random_start_point=True
+            )
+
+            ans = place_model.get_transform(points_child, points_parent)
+            # breakpoint()
+
+            pred_T_action_init = ans["pred_T_action"]
+            pred_T_action_mat = pred_T_action_init.get_matrix()[0].T.detach().cpu().numpy()
+
+
+            relative_trans_guess = pred_T_action_mat
+            # print(relative_trans_guess)
+
+            torch.cuda.empty_cache()
+            # pr_model.cuda()
+            # success_model.cuda()
+        else:
+            guess_rot = rot_grid[np.random.randint(rot_grid.shape[0])]
+            tf1 = np.eye(4); tf1[:-1, -1] = -1.0 * np.mean(child_pcd, axis=0)
+            tf2 = np.eye(4)
+            if exp_args.eval.init_orig_ori:
+                log_warn(f'!!! USING ORIGINAL ORIENTATION AS INITIAL GUESS ORIENTATION !!!')
+            else:
+                log_warn(f'!!! USING RANDOM SO(3) ROTATION AS INITIAL GUESS ORIENTATION !!!')
+                tf2[:-1, :-1] = guess_rot
+
+            if exp_args.eval.init_parent_mean_pos:
+                log_warn(f'!!! USING PARENT MEAN AS INITIAL GUESS POSITION !!!')
+                tf3 = np.eye(4); tf3[:-1, -1] = np.mean(parent_pcd, axis=0) + ((np.random.random(3) - 0.5) * 0.005)
+            else:
+                log_warn(f'!!! USING RANDOM PARENT POINT AS INITIAL GUESS POSITION !!!')
+                tf3 = np.eye(4); tf3[:-1, -1] = parent_pcd[np.random.randint(parent_pcd.shape[0])] + (np.random.random(3) * 0.01)
+
+            relative_trans_guess = np.matmul(tf3, np.matmul(tf2, tf1))
 
         time.sleep(0.3)
 
@@ -906,11 +1025,11 @@ def main(args: config_util.AttrDict) -> None:
             child_scale=current_child_scale_list,
             child_pose=current_child_pose_list,
             multi=True)
-        
+
         inlier_parent_idx = np.where(np.max(parent_pcd, axis=1) < 3.0)[0]
         parent_pcd = parent_pcd[inlier_parent_idx]
         infer_kwargs['gt_child_cent'] = np.matmul(relative_trans_guess, start_child_pose_mat)[:-1, -1]
-        
+
         # args for exporting the visualization
         infer_kwargs['export_viz'] = args.export_viz
         infer_kwargs['export_viz_dirname'] = args.export_viz_dirname
@@ -923,29 +1042,34 @@ def main(args: config_util.AttrDict) -> None:
 
         infer_kwargs['iteration'] = iteration
 
-        # refine
-        relative_trans_pred = infer_relation_policy(
-            mc_vis, 
-            parent_pcd, child_pcd_guess, 
-            coarse_aff_model,
-            pr_model, 
-            success_model,
-            scene_mean=args.data.coarse_aff.scene_mean, scene_scale=args.data.coarse_aff.scene_scale, 
-            grid_pts=raster_pts, rot_grid=rot_grid, 
-            viz=False, n_iters=exp_args.eval.n_refine_iters, 
-            no_parent_crop=(not exp_args.parent_crop),
-            return_top=(not exp_args.eval.return_rand), with_coll=exp_args.eval.with_coll, 
-            run_affordance=exp_args.eval.run_affordance, init_k_val=exp_args.eval.init_k_val,
-            no_sc_score=exp_args.eval.no_success_classifier, 
-            init_parent_mean=exp_args.eval.init_parent_mean_pos, init_orig_ori=exp_args.eval.init_orig_ori,
-            refine_anneal=exp_args.eval.refine_anneal,
-            mesh_dict=multi_mesh_dict,
-            add_per_iter_noise=exp_args.eval.add_per_iter_noise,
-            per_iter_noise_kwargs=exp_args.eval.per_iter_noise_kwargs,
-            variable_size_crop=exp_args.eval.variable_size_crop,
-            timestep_emb_decay_factor=exp_args.eval.timestep_emb_decay_factor,
-            **infer_kwargs)
+        skip_refinement = False
+        if skip_refinement:
+            relative_trans_pred = np.eye(4)
+        else:
+            # refine
+            relative_trans_pred = infer_relation_policy(
+                mc_vis,
+                parent_pcd, child_pcd_guess,
+                coarse_aff_model,
+                pr_model,
+                success_model,
+                scene_mean=args.data.coarse_aff.scene_mean, scene_scale=args.data.coarse_aff.scene_scale,
+                grid_pts=raster_pts, rot_grid=rot_grid,
+                viz=False, n_iters=exp_args.eval.n_refine_iters,
+                no_parent_crop=(not exp_args.parent_crop),
+                return_top=(not exp_args.eval.return_rand), with_coll=exp_args.eval.with_coll,
+                run_affordance=exp_args.eval.run_affordance, init_k_val=exp_args.eval.init_k_val,
+                no_sc_score=exp_args.eval.no_success_classifier,
+                init_parent_mean=exp_args.eval.init_parent_mean_pos, init_orig_ori=exp_args.eval.init_orig_ori,
+                refine_anneal=exp_args.eval.refine_anneal,
+                mesh_dict=multi_mesh_dict,
+                add_per_iter_noise=exp_args.eval.add_per_iter_noise,
+                per_iter_noise_kwargs=exp_args.eval.per_iter_noise_kwargs,
+                variable_size_crop=exp_args.eval.variable_size_crop,
+                timestep_emb_decay_factor=exp_args.eval.timestep_emb_decay_factor,
+                **infer_kwargs)
 
+        print(relative_trans_pred)
         transformed_child1 = util.transform_pcd(child_pcd_guess, relative_trans_pred)
 
         with recorder.meshcat_scene_lock:
@@ -953,6 +1077,7 @@ def main(args: config_util.AttrDict) -> None:
             util.meshcat_pcd_show(mc_vis, transformed_child1, color=[255, 255, 0], name='scene/child_pcd_predict')
 
         relative_trans = np.matmul(relative_trans_pred, relative_trans_guess)
+        print(relative_trans)
 
         child_obj_id = pc_master_dict['child']['pb_obj_id'][0]
         start_child_pose = np.concatenate(pb_client.get_body_state(child_obj_id)[:2]).tolist()
@@ -960,7 +1085,7 @@ def main(args: config_util.AttrDict) -> None:
         final_child_pose_mat = np.matmul(relative_trans, start_child_pose_mat)
 
         time.sleep(1.0)
-        
+
         delta_pc_final_list = []
         for parent_pose in current_parent_pose_list:
             delta_pc_final = np.linalg.norm(np.array(parent_pose[:3]) - final_child_pose_mat[:-1, -1])
@@ -1010,7 +1135,7 @@ def main(args: config_util.AttrDict) -> None:
 
         ########################################################################################
         # use the virtual hand to move the child object into place
-        
+
         if (eval_bookshelf_task or eval_cabinet_task):
             # use either known info or prediction approach to obtain approach vector
             final_delta_pos = np.array([np.cos(bookshelf_yaw), np.sin(bookshelf_yaw), 0.0])
@@ -1018,7 +1143,7 @@ def main(args: config_util.AttrDict) -> None:
 
             # reset object into the initial position (pre-approach)
             pb_client.reset_body(child_obj_id, final_child_pre_pos, final_child_ori)
-            
+
         if eval_mug_rack_multi_task and exp_args.use_floating_hand_execution: # and False:
             # use either knwon info or prediction approach to obtain approach vector
             final_delta_pos = None
@@ -1030,7 +1155,7 @@ def main(args: config_util.AttrDict) -> None:
             rack_to_handle_vec = rack_to_handle_vec / np.linalg.norm(rack_to_handle_vec)
             if np.dot(offset_axis_pre_rot, rack_to_handle_vec) < 0.0:
                 offset_axis_pre_rot = -1.0 * offset_axis_pre_rot
-            
+
             # if z-component is negative, we're probably on the wrong side
             if offset_axis_pre_rot[2] < 0:
                 offset_axis_pre_rot = -1.0 * offset_axis_pre_rot
@@ -1058,7 +1183,7 @@ def main(args: config_util.AttrDict) -> None:
 
         success_crit_dict = {}
         kvs = {}
-        
+
         if (eval_bookshelf_task or eval_cabinet_task or eval_mug_rack_multi_task) and exp_args.use_floating_hand_execution:
 
             safeRemoveConstraint(pc_master_dict['child']['o_cid'][0])
@@ -1100,11 +1225,11 @@ def main(args: config_util.AttrDict) -> None:
             while True:
                 out_move_until_touch = floating_hand.hand.move_ee_xyz_until_touch(
                     hand_delta_pos_to_exec,
-                    eef_step=0.001, 
+                    eef_step=0.001,
                     coll_id_pairs=(
-                        (place_parent_obj_id, -1), 
-                        (child_obj_id, -1)), 
-                    use_force=True, 
+                        (place_parent_obj_id, -1),
+                        (child_obj_id, -1)),
+                    use_force=True,
                     force_thresh=15.0,
                     return_stop_motion=True)
 
@@ -1114,7 +1239,7 @@ def main(args: config_util.AttrDict) -> None:
 
                 if delta_final < 0.02:
                     break
-                
+
                 # back off, and move orthogonal to approach
                 hand_ee_pos = floating_hand.hand.get_ee_pose()[0]
                 if exec_attempts == 0:
@@ -1124,7 +1249,7 @@ def main(args: config_util.AttrDict) -> None:
                 rnd_delta_pos = 0.0075 * util.sample_orthogonal_vector(final_delta_pos)
 
                 floating_hand.hand.set_ee_pose(pos=base_hand_ee_pos + rnd_delta_pos)
-                
+
                 # random rotation in body frame
                 rnd_euler = np.deg2rad(5) * (np.random.random(3) - 0.5)
                 rnd_mat = R.from_euler('xyz', rnd_euler).as_matrix()
@@ -1218,7 +1343,7 @@ def main(args: config_util.AttrDict) -> None:
             safeRemoveConstraint(pc_master_dict['parent']['o_cid'][place_parent_idx])
             for o_cid in pc_master_dict['child']['o_cid']:
                 safeRemoveConstraint(o_cid)
-            
+
             # first, reset everything
             pb_client.reset_body(place_parent_obj_id, start_parent_pose[:3], start_parent_pose[3:])
             pb_client.reset_body(child_obj_id, start_child_pose[:3], start_child_pose[3:])
@@ -1230,8 +1355,8 @@ def main(args: config_util.AttrDict) -> None:
             parent_upside_down_pose_list = util.pose_stamped2list(util.pose_from_matrix(upside_down_pose_mat))
 
             # reset parent to this state and constrain to world
-            pb_client.reset_body(place_parent_obj_id, parent_upside_down_pose_list[:3], parent_upside_down_pose_list[3:]) 
-            ud_cid = constraint_obj_world(place_parent_obj_id, parent_upside_down_pose_list[:3], parent_upside_down_pose_list[3:]) 
+            pb_client.reset_body(place_parent_obj_id, parent_upside_down_pose_list[:3], parent_upside_down_pose_list[3:])
+            ud_cid = constraint_obj_world(place_parent_obj_id, parent_upside_down_pose_list[:3], parent_upside_down_pose_list[3:])
 
             # get the final relative pose of the child object
             final_child_pose_parent = util.convert_reference_frame(
@@ -1249,7 +1374,7 @@ def main(args: config_util.AttrDict) -> None:
             final_child_pose_upside_down_mat = util.matrix_from_pose(final_child_pose_upside_down)
 
             # reset child to this state
-            pb_client.reset_body(child_obj_id, final_child_pose_upside_down_list[:3], final_child_pose_upside_down_list[3:]) 
+            pb_client.reset_body(child_obj_id, final_child_pose_upside_down_list[:3], final_child_pose_upside_down_list[3:])
 
             # turn on the simulation and wait for a couple seconds
             pb_client.set_step_sim(False)
@@ -1263,7 +1388,7 @@ def main(args: config_util.AttrDict) -> None:
             #########################################################################
 
         place_success = np.all(np.asarray(list(success_crit_dict.values())))
-        
+
         place_success_list.append(place_success)
         log_str = 'Iteration: %d, ' % iteration
 
@@ -1329,6 +1454,7 @@ def main(args: config_util.AttrDict) -> None:
         time.sleep(0.5)
 
 
+
 if __name__ == "__main__":
     """Parse input arguments"""
 
@@ -1348,13 +1474,13 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     eval_args = config_util.load_config(osp.join(path_util.get_eval_config_dir(), args.config_fname), demo_train_eval='eval')
-    
+
     eval_args['debug'] = args.debug
     eval_args['debug_data'] = args.debug_data
     eval_args['port_vis'] = args.port_vis
     eval_args['seed'] = args.seed
     eval_args['local_dataset_dir'] = args.local_dataset_dir
-    
+
     # other runtime options
     # if we want to export for post-process visualization
     eval_args['export_viz'] = args.export_viz
@@ -1363,7 +1489,7 @@ if __name__ == "__main__":
     # if we want to compute coverage metrics
     eval_args['compute_coverage'] = args.compute_coverage
     eval_args['out_coverage_dirname'] = args.out_coverage_dirname
-    
+
     # if we want to override the port setting for meshcat and directly start our own
     eval_args['new_meshcat'] = args.new_meshcat
 

@@ -1,7 +1,7 @@
 inherit_from: base.yaml
 experiment:
-    experiment_name: book_on_bookshelf_nosc
-    num_iterations: 50
+    experiment_name: book_on_bookshelf_nosc_500
+    num_iterations: 500
     meshcat_on: True
     pybullet_viz: False
     parent_class: syn_bookshelf
@@ -18,8 +18,8 @@ experiment:
         pose_refine_model_name: quickstart_weights/book_on_bookshelf_pose_diff_varying_crop_qs
         success_model_name: quickstart_weights/book_on_bookshelf_success_cls_qs
         parent_load_pose_type: random_upright
-        # child_load_pose_type: random_upright
-        child_load_pose_type: any_pose
+        child_load_pose_type: random_upright
+        # child_load_pose_type: any_pose
         inference_method: multistep_regression_scene_combine_succ_cls 
         return_rand: False # see about removing
         with_coll: False # see about removing

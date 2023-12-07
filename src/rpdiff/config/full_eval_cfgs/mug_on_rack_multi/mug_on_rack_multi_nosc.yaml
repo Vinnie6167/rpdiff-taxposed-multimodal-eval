@@ -1,7 +1,7 @@
 inherit_from: base.yaml
 experiment:
-    experiment_name: mug_on_rack_multi_nosc
-    num_iterations: 50
+    experiment_name: mug_on_rack_multi_nosc_500
+    num_iterations: 500
     meshcat_on: True
     pybullet_viz: False
     parent_class: syn_rack_med

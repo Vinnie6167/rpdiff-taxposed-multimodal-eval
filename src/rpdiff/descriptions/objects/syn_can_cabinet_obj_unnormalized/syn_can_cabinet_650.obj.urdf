@@ -1,0 +1,24 @@
+<?xml version="1.0" ?>
+<robot name="syn_can_cabinet_650">
+    <link concave="yes" name="base_link">
+        <inertial>
+            <origin rpy="0 0 0" xyz="0 0 0"/>
+            <mass value="0.0"/>
+            <inertia ixx="1e-08" ixy="0" ixz="0" iyy="1e-08" iyz="0" izz="1e-08"/>
+        </inertial>
+        <visual>
+            <origin xyz="0 0 0" rpy="0 0 0" />
+            <geometry>
+                <mesh filename="syn_can_cabinet_650.obj" scale="1.000000 1.000000 1.000000"/>
+            </geometry>         
+        </visual>
+
+        <collision concave="yes">
+            <origin xyz="0 0 0" rpy="0 0 0"/>
+            <geometry>
+                <mesh filename="syn_can_cabinet_650.obj" scale="1.000000 1.000000 1.000000"/>
+            </geometry>
+        </collision>
+    </link>
+</robot>
+    

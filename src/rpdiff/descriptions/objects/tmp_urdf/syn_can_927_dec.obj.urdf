@@ -1,0 +1,24 @@
+<?xml version="1.0" ?>
+<robot name="syn_can_927_dec">
+    <link name="base_link">
+        <inertial>
+            <origin rpy="0 0 0" xyz="0 0 0"/>
+            <mass value="0.1"/>
+            <inertia ixx="1e-08" ixy="0" ixz="0" iyy="1e-08" iyz="0" izz="1e-08"/>
+        </inertial>
+        <visual>
+            <origin xyz="0 0 0" rpy="0 0 0" />
+            <geometry>
+                <mesh filename="/home/allen/rpdiff/src/rpdiff/descriptions/objects/syn_cans_obj/syn_can_927_dec.obj" scale="0.897840 0.897840 0.844320"/>
+            </geometry>         
+        </visual>
+
+        <collision>
+            <origin xyz="0 0 0" rpy="0 0 0"/>
+            <geometry>
+                <mesh filename="/home/allen/rpdiff/src/rpdiff/descriptions/objects/syn_cans_obj/syn_can_927_dec.obj" scale="0.897840 0.897840 0.844320"/>
+            </geometry>
+        </collision>
+    </link>
+</robot>
+    

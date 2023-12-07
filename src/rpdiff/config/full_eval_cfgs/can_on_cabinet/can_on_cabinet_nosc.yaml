@@ -1,7 +1,7 @@
 inherit_from: base.yaml
 experiment:
-    experiment_name: can_on_cabinet_nosc
-    num_iterations: 50
+    experiment_name: can_on_cabinet_nosc_500
+    num_iterations: 500
     meshcat_on: True
     pybullet_viz: False
     parent_class: syn_cabinet

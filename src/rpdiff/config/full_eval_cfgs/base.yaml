@@ -23,6 +23,7 @@ experiment:
     load_success_classifier: True
     load_coarse_aff: False
     eval:
+        taxposed_input: False
         feat_enc_model_name:
         voxel_aff_model_name:
         pose_refine_model_name:
